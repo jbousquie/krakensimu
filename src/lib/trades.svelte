@@ -23,11 +23,11 @@
     $: plusVariation = (variation >= 0) ? '+' : '';
     $: plusGain = (netGain >= 0) ? '+' : '';
     $: sign = (netGain >= 0) ? 'pos' : 'neg';
-    $: checkGainThreshold();
 
     let maxTradeNb: number = 25;
     let connecte: boolean = false;
     let title: string = 'SimuKraken';
+    let signalChar = '⬤';
     let trades: [{symbol: string; side: string; price: number; qty: number; ord_type: string}];
     let tradeList: string = '';
 
@@ -49,7 +49,11 @@
     // notifie à chaque fois que le gain passe au dessus du seuil
     function notifyThreshold() {
         let msgGain = "Gain : " + netGain.toFixed(2) + " " + currency + " !!!"
-        document.title = (document.title == title) ? msgGain : title;       
+        document.title = (document.title == title) ? msgGain : title;    
+        let signal = document.querySelector("#signal");
+        if (signal) {
+            signal.innerHTML = (signal.innerHTML == signalChar) ? "" : signalChar;
+        }
     }
 
     // supprime la notification de seuil dépassé
@@ -133,7 +137,7 @@
                             } else {
                                 let l = lastPrices.length;
                                 if (l > 0) {
-                                    prev = lastPrices[l - 1]; // on compare le premier trade reçu à celui reçu précédemment
+                                    prev = lastPrices[tradePair][l - 1]; // on compare le premier trade reçu à celui reçu précédemment
                                 } else {
                                     prev = {price: trd.price};
                                 }
@@ -181,16 +185,16 @@
 </script>
 {#if connecte}
 <br/>
- <div class="buy">Connecté à Kraken</div>
+ <div class="pos">Connecté à Kraken</div>
 {/if}
 <br/>
 <div>
-    frais à l'achat : {entryFee.toFixed(2)} {currency}<br/>
-    prix de la crypto {crypto} : <b>{sellPrice.toFixed(2)} {currency}</b><br/>
-    variation du prix par rapport à l'achat : {plusVariation}{variation.toFixed(3)} %<br/>
-    valeur actuelle de la mise : <b>{grossValue.toFixed(2)} {currency}</b><br/>
-    frais de revente : {exitFee.toFixed(2)} {currency} <br/>
-    <b>gain net : <span class={sign}>{plusGain}{netGain.toFixed(2)} {currency}</span></b><br/>
+    prix actuel de la crypto {crypto} : <b>{sellPrice.toFixed(2)} {currency}</b><br/>
+    valeur actuelle de la mise : <b>{grossValue.toFixed(2)} {currency}</b><br/><br/>
+    <b><span class={sign}>gain net : {plusGain}{netGain.toFixed(2)} {currency}</span></b><br/><br/>
+    variation du prix de {crypto} par rapport à l'achat : {plusVariation}{(100 * variation).toFixed(2)} %<br/>
+    frais à l'achat : {entryFee.toFixed(2)} {currency} (déjà décomptés)<br/>
+    frais de revente : {exitFee.toFixed(2)} {currency} (si revente à ce prix)<br/><br/>
 </div>
 <br/>
 <div>

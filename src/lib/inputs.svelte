@@ -38,7 +38,7 @@
 <input type="number" id="stake" name="stake" bind:value={stake} min="0"> 
 <br/>
 <label for="threshold">Seuil de gain en {currency} = </label>
-<input type="number" id="threshold" name="threshold" bind:value={threshold} min="0"> 
+<input type="number" id="threshold" name="threshold" bind:value={threshold} min="0"> <span id="signal" class="pos"></span>
 <br/>
 <div id="data">
     <Trades {feeRate} {pair} {buyPrice} {stake} {pairs} {currency} {crypto} {threshold} />
