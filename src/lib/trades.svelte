@@ -59,6 +59,10 @@
     // supprime la notification de seuil dépassé
     function notifyReset() {
         document.title = title;
+        let signal = document.querySelector("#signal");
+        if (signal) {
+            signal.innerHTML = "";
+        }
     }
 
 
