@@ -4,6 +4,20 @@
     // https://docs.kraken.com/websockets-v2/#trade
     import { onMount } from "svelte";
 
+    // Une ligne de trade stockée dans un tableau pour affichage et calculs
+    class TradeLine {
+        price: number = 0;
+        side: string = ''; 
+        line: string = ''; 
+        timestamp: string ='';
+        constructor(price: number, side: string, timestamp: string, line: string) {
+            this.price = price;
+            this.side = side;
+            this.timestamp = timestamp;
+            this.line = line;
+        }
+    }
+
     export let feeRate: number = 0.1;
     export let pair: string;
     export let buyPrice: number = 1000;
@@ -24,11 +38,11 @@
     $: plusGain = (netGain >= 0) ? '+' : '';
     $: sign = (netGain >= 0) ? 'pos' : 'neg';
 
-    let maxTradeNb: number = 25;
+    let maxTradeNb: number = 250;
     let connecte: boolean = false;
     let title: string = 'SimuKraken';
     let signalChar = '⬤';
-    let trades: [{symbol: string; side: string; price: number; qty: number; ord_type: string}];
+    let trades: [{symbol: string; side: string; price: number; qty: number; ord_type: string; timestamp: string}]; // Réponse kraken
     let tradeList: string = '';
 
     // derniers prix : on tient à jour un tableau de 100 entrées par paire
@@ -137,23 +151,23 @@
                             let trd = trades[i];
                             let prev;
                             if (i > 0) {                               
-                                prev = trades[i  - 1];          // on compare les prix au sein des trades reçus
+                                prev = trades[i  - 1];                  // on compare les prix au sein des trades reçus
                             } else {
                                 let l = lastPrices.length;
                                 if (l > 0) {
                                     prev = lastPrices[tradePair][l - 1]; // on compare le premier trade reçu à celui reçu précédemment
                                 } else {
-                                    prev = {price: trd.price};
+                                    prev = {price: trd.price};           // mock objet s'il n'y avait pas de prev trade
                                 }
                             }
-                            let move = getMove(prev.price, trd.price);
+                            let move = getMove(prev.price, trd.price);  // on en déduit si le prix monte ou descend
 
                             let sd = (trd.side == "buy") ? "buy " : trd.side;
                             let tp = (trd.ord_type == "limit") ? " limit" : trd.ord_type;
 
                             let line: string = trd.symbol + " " + sd + "/" + tp + "&nbsp;&nbsp;&nbsp;<b>" + trd.price.toFixed(2) + " " + move +"</b>&nbsp;&nbsp;&nbsp;" + trd.qty.toFixed(4) ;
-                            let elem = { price: trd.price,  side: trd.side, line: line };
-                            lastPrices[tradePair].push(elem);
+                            let tradeLine = new TradeLine(trd.price, trd.side, trd.timestamp, line);
+                            lastPrices[tradePair].push(tradeLine);
                             if (lastPrices[tradePair].length >= maxTradeNb) {
                                 lastPrices[tradePair].shift();
                             }
@@ -166,6 +180,7 @@
                             sellPrice = lastPricePair[lastIndex].price;
                             tradeList = listTrades(lastPricePair);
                         }
+                        displayGraph(tradePair);
                         break;
                     
                     // heartbeat
@@ -186,6 +201,48 @@
         }
 
     });
+
+
+    function displayGraph(pair: string) {
+        let lastPricePair: [TradeLine] = lastPrices[pair];
+        let coords = [];
+        let lastx: number = 0;
+        let lasty: number = 0;
+        let maxx: number = 0;
+        let maxy: number = 0;
+        let minx: number = Number.MAX_SAFE_INTEGER;
+        let miny: number = Number.MAX_SAFE_INTEGER;
+        for (let i = lastPricePair.length - 1; i >= 0; i--) {    // ordre chrono = inverse
+            let trd: TradeLine = lastPricePair[i];
+            let x: number = +Date.parse(trd.timestamp);
+            let y: number = trd.price;
+            if (x == lastx && y == lasty) {
+                continue;                   // on ne stocke pas les doublons
+            }
+            coords.push(x * 0.0000000001, y * 0.001);
+            lastx = x;
+            lasty = y;
+            if (x > maxx) { maxx = x; }
+            if (y > maxy) { maxy = y; }
+            if (x < minx) { minx = x; }
+            if (y < miny) { miny = y; }
+        }
+        
+        let d = "M " + coords[0].toString() + " " + coords[1].toString();
+        for (let i = 2; i < coords.length; i = i + 2) {
+            d = d + " L " + coords[i].toString() + " " + coords[i + 1].toString();
+        }
+        let path = '<path d="' + d + '" stroke-width="2" stroke="black" />';
+        //let path ='<circle cx="' + minx * 0.00000000001 + '" cy="'+ miny / 10000 + '" r="50" stroke="red" stroke-width="10"/>'; 
+        // https://developer.mozilla.org/fr/docs/Web/SVG/Tutorial/Positions
+        let viewbox = Math.floor(minx).toString() + " " + Math.floor(miny).toString() + " " + Math.floor(maxx).toString() + " " + Math.floor(maxy).toString();
+        let svg = document.querySelector("#graph");
+        if (svg) {
+            viewbox = "180 50 20 20";
+            svg.innerHTML = path;
+            svg.setAttribute("viewBox", viewbox);
+        }
+    }
 </script>
 {#if connecte}
 <br/>
@@ -207,6 +264,9 @@
         {@html tradeList}
     </div>
 </div>
+
+<svg id="graph" height="400" width="1200" style="background-color:aliceblue;" xmlns="http://www.w3.org/2000/svg">
+</svg>
 
 <style>
     .pos {
