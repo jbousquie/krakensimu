@@ -4,17 +4,21 @@
     // https://docs.kraken.com/websockets-v2/#trade
     import { onMount } from "svelte";
 
-    // Une ligne de trade stockée dans un tableau pour affichage et calculs
+    // Une ligne de trade stockée dans un tableau historique
     class TradeLine {
         price: number = 0;
+        qty: number = 0;
         side: string = ''; 
-        line: string = ''; 
+        typord: string = '';
+        move: string = ''; 
         timestamp: string ='';
-        constructor(price: number, side: string, timestamp: string, line: string) {
+        constructor(price: number, qty: number, side: string, typord: string, timestamp: string, move: string) {
             this.price = price;
+            this.qty = qty;
             this.side = side;
+            this.typord = typord;
             this.timestamp = timestamp;
-            this.line = line;
+            this.move = move;
         }
     }
 
@@ -26,6 +30,8 @@
     export let crypto: string;
     export let currency: string;
     export let threshold: number = 100;
+    export let ratioX: number = 5;
+    export let ratioY: number = 0.5;
     
 
     $: entryFee = feeRate * stake * 0.01;
@@ -38,12 +44,13 @@
     $: plusGain = (netGain >= 0) ? '+' : '';
     $: sign = (netGain >= 0) ? 'pos' : 'neg';
 
-    let maxTradeNb: number = 250;
+    let maxTradeNb: number = 3000;       // nb de trades max dans l'historique
+    let maxDisplayNb: number = 30;      // nd de trades max à afficher
     let connecte: boolean = false;
     let title: string = 'SimuKraken';
     let signalChar = '⬤';
     let trades: [{symbol: string; side: string; price: number; qty: number; ord_type: string; timestamp: string}]; // Réponse kraken
-    let tradeList: string = '';
+    let tradeList: string = '';  // string html d'affichage des trades
 
     // derniers prix : on tient à jour un tableau de 100 entrées par paire
     let lastPrices: any = {};
@@ -81,12 +88,19 @@
 
 
     // retourne une string html des trades dans l'ordre chrono (inversé)
-    function listTrades(lastPricePair: any): string {
+    function listTrades(pair: string, lastPricePair: any, maxNb: number): string {
         let listTrade = '<br/>';
-        for (let i = lastPricePair.length - 1; i >= 0; i--) {
+        let limit = 0;
+        let len = lastPricePair.length - 1;
+        if (len - maxNb > 0) {
+            limit = len - maxNb + 1;
+        }
+        for (let i = len; i >= limit; i--) {
             let trd = lastPricePair[i];
-            let line = trd.line;                                
+            let sd = (trd.side == "buy") ? "buy " : trd.side;
+            let tp = (trd.typord == "limit") ? " limit" : trd.typord;
             let cls = (trd.side == "sell") ? "sell" : 'buy';
+            let line: string = pair + " " + sd + "/" + tp + "&nbsp;&nbsp;&nbsp;<b>" + trd.price.toFixed(2) + " " + trd.move +"</b>&nbsp;&nbsp;&nbsp;" + trd.qty.toFixed(4) ;            
             listTrade = listTrade + "<span class=" + cls +">" + line + "</span><br/>";
         }
         return listTrade;
@@ -153,7 +167,7 @@
                             if (i > 0) {                               
                                 prev = trades[i  - 1];                  // on compare les prix au sein des trades reçus
                             } else {
-                                let l = lastPrices.length;
+                                let l = lastPrices[tradePair].length;
                                 if (l > 0) {
                                     prev = lastPrices[tradePair][l - 1]; // on compare le premier trade reçu à celui reçu précédemment
                                 } else {
@@ -161,12 +175,7 @@
                                 }
                             }
                             let move = getMove(prev.price, trd.price);  // on en déduit si le prix monte ou descend
-
-                            let sd = (trd.side == "buy") ? "buy " : trd.side;
-                            let tp = (trd.ord_type == "limit") ? " limit" : trd.ord_type;
-
-                            let line: string = trd.symbol + " " + sd + "/" + tp + "&nbsp;&nbsp;&nbsp;<b>" + trd.price.toFixed(2) + " " + move +"</b>&nbsp;&nbsp;&nbsp;" + trd.qty.toFixed(4) ;
-                            let tradeLine = new TradeLine(trd.price, trd.side, trd.timestamp, line);
+                            let tradeLine = new TradeLine(trd.price, trd.qty, trd.side, trd.ord_type, trd.timestamp, move);
                             lastPrices[tradePair].push(tradeLine);
                             if (lastPrices[tradePair].length >= maxTradeNb) {
                                 lastPrices[tradePair].shift();
@@ -178,9 +187,9 @@
                             let lastPricePair = lastPrices[pair];
                             let lastIndex = lastPricePair.length - 1;
                             sellPrice = lastPricePair[lastIndex].price;
-                            tradeList = listTrades(lastPricePair);
+                            tradeList = listTrades(pair, lastPricePair, maxDisplayNb);
                         }
-                        displayGraph(tradePair);
+                        
                         break;
                     
                     // heartbeat
@@ -188,8 +197,9 @@
                         let lastPricePair = lastPrices[pair];
                         let lastIndex = lastPricePair.length - 1;
                         sellPrice = lastPricePair[lastIndex].price;
-                        tradeList = listTrades(lastPricePair);
+                        //tradeList = listTrades(lastPricePair);
                         checkGainThreshold();
+                        displayGraph(pair, ratioX, ratioY);
                         break;
                 }
             }
@@ -203,44 +213,60 @@
     });
 
 
-    function displayGraph(pair: string) {
+    function displayGraph(pair: string, ratioX: number, ratioY: number) {
         let lastPricePair: [TradeLine] = lastPrices[pair];
-        let coords = [];
+        let coords: any = [];                                   // tableau de coordonnées pour le graphe
         let lastx: number = 0;
         let lasty: number = 0;
         let maxx: number = 0;
         let maxy: number = 0;
-        let minx: number = Number.MAX_SAFE_INTEGER;
-        let miny: number = Number.MAX_SAFE_INTEGER;
-        for (let i = lastPricePair.length - 1; i >= 0; i--) {    // ordre chrono = inverse
+        let minx: number = Number.MAX_VALUE;
+        let miny: number = Number.MAX_VALUE;
+        // stockage des coordonnées brutes des trades
+        for (let i = lastPricePair.length - 1; i >= 0; i--) {       // ordre chrono = inverse
             let trd: TradeLine = lastPricePair[i];
             let x: number = +Date.parse(trd.timestamp);
             let y: number = trd.price;
             if (x == lastx && y == lasty) {
                 continue;                   // on ne stocke pas les doublons
             }
-            coords.push(x * 0.0000000001, y * 0.001);
             lastx = x;
             lasty = y;
             if (x > maxx) { maxx = x; }
             if (y > maxy) { maxy = y; }
             if (x < minx) { minx = x; }
             if (y < miny) { miny = y; }
+            coords.push(x);
+            coords.push(y);
         }
-        
+        // translation/scale des coordonnées
+        for (let i = 0; i < coords.length; i = i + 2) {
+            coords[i] = (coords[i] - minx) * 0.0001 * ratioX;
+            coords[i + 1] = 100 - (coords[i + 1] - maxy) * ratioY;
+        }
         let d = "M " + coords[0].toString() + " " + coords[1].toString();
         for (let i = 2; i < coords.length; i = i + 2) {
             d = d + " L " + coords[i].toString() + " " + coords[i + 1].toString();
         }
-        let path = '<path d="' + d + '" stroke-width="2" stroke="black" />';
-        //let path ='<circle cx="' + minx * 0.00000000001 + '" cy="'+ miny / 10000 + '" r="50" stroke="red" stroke-width="10"/>'; 
+        let svgCommands = '';
+        
+        for (let l = 0; l < 200; l = l +20) {
+            let hgrid = "<path d=\"M 0 " + l.toString() + " H 400\" fill=\"transparent\" stroke=\"lightgrey\" stroke-width=\"0.3\" />";
+            svgCommands = svgCommands + hgrid;
+            let hgridprice = '<text x="' + 5 + '" y="' + (l - 2).toString() + '" fill="lightgrey">' + "65000" + '</text>';
+            svgCommands =svgCommands + hgridprice;
+        }
+        svgCommands = svgCommands + '<path d="M 0 100 H 400" fill="transparent" stroke="red" stroke-width="0.2"/>';
+        svgCommands = svgCommands + '<path d="' + d + '" stroke-width="1" fill="transparent" stroke="blue" />';
+        let lastPrice = lastPricePair[lastPricePair.length - 1].price;
+        let shift = 3;
+        let x = (coords[0] + shift).toString();
+        let y = (coords[1] - shift).toString();
+        svgCommands = svgCommands + '<text x="' + x + '" y="' + y + '" fill="blue">' + lastPrice.toString() + '</text>';
         // https://developer.mozilla.org/fr/docs/Web/SVG/Tutorial/Positions
-        let viewbox = Math.floor(minx).toString() + " " + Math.floor(miny).toString() + " " + Math.floor(maxx).toString() + " " + Math.floor(maxy).toString();
         let svg = document.querySelector("#graph");
         if (svg) {
-            viewbox = "180 50 20 20";
-            svg.innerHTML = path;
-            svg.setAttribute("viewBox", viewbox);
+            svg.innerHTML = svgCommands;
         }
     }
 </script>
@@ -265,8 +291,6 @@
     </div>
 </div>
 
-<svg id="graph" height="400" width="1200" style="background-color:aliceblue;" xmlns="http://www.w3.org/2000/svg">
-</svg>
 
 <style>
     .pos {
