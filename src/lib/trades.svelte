@@ -252,12 +252,14 @@
             minY = miny;
         }
         resetGrid = false;
-        let firstValue = coords[1];
+        let stepNb = 10;
+        let stepSize = 200 / stepNb;
         let mid = (maxY - minY) * 0.5 + minY;
+        let midshift = mid % stepSize;
         // translation/scale des coordonnées
         for (let i = 0; i < coords.length; i = i + 2) {
             coords[i] = (coords[i] - minX) * 0.0001 * ratioX;
-            coords[i + 1] = 100 - (coords[i + 1] - mid) * ratioY;
+            coords[i + 1] = 100 - (coords[i + 1] - mid + midshift) * ratioY;
         }
         // path de la courbe
         let d = "M " + coords[0].toString() + " " + coords[1].toString();
@@ -266,14 +268,12 @@
         }
         // grille
         let svgCommands = '';
-        let stepNb = 10;
-        let stepSize = 200 / stepNb;
-        let value = mid + stepSize * (100 / stepSize) * ratioY;
+        let value = Math.floor(mid / stepSize) * stepSize + (stepSize * stepNb / 2); // on commence à stepNb/2 intervalles au dessus de la valeur mid arrondie
         for (let s = 0; s < stepNb; s++) {
             let l = (s + 1)  * stepSize;
             let hgrid = "<path d=\"M 0 " + l.toString() + " H 400\" fill=\"transparent\" stroke=\"lightgrey\" stroke-width=\"0.3\" />";
             svgCommands = svgCommands + hgrid;
-            value -= stepSize;
+            value -= stepSize * ratioY;
             let hgridprice = '<text x="' + 5 + '" y="' + (l - 2).toString() + '" fill="lightgrey">' + value.toFixed(2) + '</text>';
             svgCommands =svgCommands + hgridprice;
         }
