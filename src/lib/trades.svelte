@@ -43,6 +43,7 @@
     $: plusVariation = (variation >= 0) ? '+' : '';
     $: plusGain = (netGain >= 0) ? '+' : '';
     $: sign = (netGain >= 0) ? 'pos' : 'neg';
+    $: resetGrid = (pair) ? true : true; // si la paire change alors il faut rescaler le graphique
 
     let maxTradeNb: number = 3000;       // nb de trades max dans l'historique
     let maxDisplayNb: number = 30;      // nd de trades max à afficher
@@ -51,6 +52,11 @@
     let signalChar = '⬤';
     let trades: [{symbol: string; side: string; price: number; qty: number; ord_type: string; timestamp: string}]; // Réponse kraken
     let tradeList: string = '';  // string html d'affichage des trades
+    let maxX: number = 0;
+    let maxY: number = 0;
+    let minX: number = Number.MAX_VALUE;
+    let minY: number = Number.MAX_VALUE;
+    
 
     // derniers prix : on tient à jour un tableau de 100 entrées par paire
     let lastPrices: any = {};
@@ -217,13 +223,13 @@
         let lastPricePair: [TradeLine] = lastPrices[pair];
         let coords: any = [];                                   // tableau de coordonnées pour le graphe
         let lastx: number = 0;
-        let lasty: number = 0;
-        let maxx: number = 0;
+        let lasty: number = 0;    let maxx: number = 0;
         let maxy: number = 0;
         let minx: number = Number.MAX_VALUE;
         let miny: number = Number.MAX_VALUE;
+
         // stockage des coordonnées brutes des trades
-        for (let i = lastPricePair.length - 1; i >= 0; i--) {       // ordre chrono = inverse
+        for (let i = 0; i < lastPricePair.length; i++) {       
             let trd: TradeLine = lastPricePair[i];
             let x: number = +Date.parse(trd.timestamp);
             let y: number = trd.price;
@@ -232,36 +238,51 @@
             }
             lastx = x;
             lasty = y;
-            if (x > maxx) { maxx = x; }
-            if (y > maxy) { maxy = y; }
-            if (x < minx) { minx = x; }
-            if (y < miny) { miny = y; }
+            if ( x > maxx) { maxx = x; }
+            if ( y > maxy) { maxy = y; }
+            if (x < minx)  { minx = x; }
+            if (y < miny)  { miny = y; }
             coords.push(x);
             coords.push(y);
         }
+        if (resetGrid) {
+            maxX = maxx;
+            maxY = maxy;
+            minX = minx;
+            minY = miny;
+        }
+        resetGrid = false;
+        let firstValue = coords[1];
+        let mid = (maxY - minY) * 0.5 + minY;
         // translation/scale des coordonnées
         for (let i = 0; i < coords.length; i = i + 2) {
-            coords[i] = (coords[i] - minx) * 0.0001 * ratioX;
-            coords[i + 1] = 100 - (coords[i + 1] - maxy) * ratioY;
+            coords[i] = (coords[i] - minX) * 0.0001 * ratioX;
+            coords[i + 1] = 100 - (coords[i + 1] - mid) * ratioY;
         }
+        // path de la courbe
         let d = "M " + coords[0].toString() + " " + coords[1].toString();
         for (let i = 2; i < coords.length; i = i + 2) {
             d = d + " L " + coords[i].toString() + " " + coords[i + 1].toString();
         }
+        // grille
         let svgCommands = '';
-        
-        for (let l = 0; l < 200; l = l +20) {
+        let stepNb = 10;
+        let stepSize = 200 / stepNb;
+        let value = mid + stepSize * (100 / stepSize) * ratioY;
+        for (let s = 0; s < stepNb; s++) {
+            let l = (s + 1)  * stepSize;
             let hgrid = "<path d=\"M 0 " + l.toString() + " H 400\" fill=\"transparent\" stroke=\"lightgrey\" stroke-width=\"0.3\" />";
             svgCommands = svgCommands + hgrid;
-            let hgridprice = '<text x="' + 5 + '" y="' + (l - 2).toString() + '" fill="lightgrey">' + "65000" + '</text>';
+            value -= stepSize;
+            let hgridprice = '<text x="' + 5 + '" y="' + (l - 2).toString() + '" fill="lightgrey">' + value.toFixed(2) + '</text>';
             svgCommands =svgCommands + hgridprice;
         }
-        svgCommands = svgCommands + '<path d="M 0 100 H 400" fill="transparent" stroke="red" stroke-width="0.2"/>';
         svgCommands = svgCommands + '<path d="' + d + '" stroke-width="1" fill="transparent" stroke="blue" />';
         let lastPrice = lastPricePair[lastPricePair.length - 1].price;
         let shift = 3;
-        let x = (coords[0] + shift).toString();
-        let y = (coords[1] - shift).toString();
+        let ln = coords.length - 2;
+        let x = (coords[ln] + shift).toString();
+        let y = (coords[ln + 1] - shift).toString();
         svgCommands = svgCommands + '<text x="' + x + '" y="' + y + '" fill="blue">' + lastPrice.toString() + '</text>';
         // https://developer.mozilla.org/fr/docs/Web/SVG/Tutorial/Positions
         let svg = document.querySelector("#graph");
